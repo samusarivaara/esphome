@@ -22,4 +22,5 @@ Steps
 Known issues
 * ESP may occasionally reboot on bad wifi conditions
 
-
+![alt text](Nordpool_viewer/Today.png)
+![alt text](Nordpool_viewer/Tomorrow.png)
