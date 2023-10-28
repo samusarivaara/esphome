@@ -1,0 +1,26 @@
+- id: '1698316667618'
+  alias: Push nordpool data esp32
+  description: ''
+  trigger:
+  - platform: state
+    entity_id:
+    - sensor.nordpool_kwh_fi_eur_3_10_024
+    attribute: current_price
+  - platform: device
+    type: changed_states
+    device_id: 55a9735e6ad24133875d5e597d543435
+    entity_id: 9937b46d7a95f6c4363088e7fa4f37d5
+    domain: update
+  condition: []
+  action:
+  - service: esphome.lilliputti6_update_lilygo_display
+    data:
+      my_price: '{{ state_attr(''sensor.nordpool_kwh_fi_eur_3_10_024'', ''today'')
+        }}'
+      my_price_tomorrow: '{{ state_attr(''sensor.nordpool_kwh_fi_eur_3_10_024'', ''tomorrow'')
+        }}'
+      my_price_now: '{{ state_attr(''sensor.nordpool_kwh_fi_eur_3_10_024'', ''current_price'')
+        }}'
+      my_price_tomorrow_is_valid: '{{ state_attr(''sensor.nordpool_kwh_fi_eur_3_10_024'',
+        ''tomorrow_valid'') }}'
+  mode: single

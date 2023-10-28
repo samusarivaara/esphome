@@ -1,0 +1,183 @@
+esphome:
+  name: "lilliputti6"
+  friendly_name: "lilliputti6"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "7yEnPeq/y9e3RezCxUSVGSDDrZbDMgdONKH069UmaoU="
+
+  services:
+    - service: update_lilygo_display
+      variables:
+        my_price: float[]
+        my_price_tomorrow: float[]
+        my_price_now: float
+        my_price_tomorrow_is_valid: bool
+      then:
+        lambda: |-
+            // Store into global variables
+            ESP_LOGD("custom", "Updating prices");
+            g_tomorrow_is_valid->value() = my_price_tomorrow_is_valid;
+
+            for (int i=0;i<24;i++) {
+               g_price_today->value()[i] = my_price[i];
+               if (g_tomorrow_is_valid->value()) {
+                   g_price_tomorrow->value()[i] = my_price_tomorrow[i];
+               }
+            }
+            g_price_now->value() = my_price_now;
+            ESP_LOGD("custom", "Updating prices...done");
+            
+
+ota:
+  password: "5cf6f70523c7f19c7898451b99ddb72d"
+
+wifi:
+  ssid: !secret wifi2_ssid
+  password: !secret wifi2_password
+
+  # Optional manual IP
+  manual_ip:
+    static_ip: 192.168.1.166
+    gateway: 192.168.1.200
+    subnet: 255.255.255.0
+
+external_components:
+  - source: github://landonr/lilygo-tdisplays3-esphome
+    components: [tdisplays3]
+
+globals:
+   - id: g_price_today
+     type: float[24]
+     restore_value: no
+     initial_value: "{4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00,4.00,2.00}"
+
+   - id: g_price_tomorrow
+     type: float[24]
+     restore_value: no
+     initial_value: "{0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00}"
+
+   - id: g_price_now
+     type: float
+     restore_value: no
+     initial_value: "0.00"
+
+   - id: g_page
+     type: bool
+     restore_value: no
+     initial_value: "true"
+
+   - id: g_tomorrow_is_valid
+     type: bool
+     restore_value: no
+     initial_value: "false"
+
+
+# Example configuration entry
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+sensor:
+
+switch:
+  - platform: gpio
+    pin: GPIO38
+    name: "Backlight"
+    id: backlight
+    internal: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+font:
+  - file: "gfonts://Roboto"
+    id: roboto
+    size: 16
+
+  - file: "gfonts://Roboto"
+    id: roboto2
+    size: 12
+
+# 170x320
+display:
+  - platform: tdisplays3
+    id: disp
+    update_interval: 10s
+    rotation: 270
+    lambda: |-
+        
+        int diagram_x = 75;
+        int diagram_y = 150;
+        int i = 0;
+        int bar_width = 8;
+        int bar_spacing = 10;
+        int price_limit_cents = 10; // Show line and use red/green color based on this
+        int scale = 10; // 10 pixels = 1 cent
+        auto green = Color(0, 255, 0);
+        auto white = Color(255, 255, 255);
+        auto red = Color(255, 0, 0);
+        auto black = Color(0, 0, 0);
+
+        float price;
+        int current_time_index = -1;
+
+        auto time = id(homeassistant_time).now();
+        if (time.is_valid()) {
+            current_time_index = time.hour; // use different bar color for the current hour
+        }
+        it.line(diagram_x, diagram_y-(price_limit_cents*scale), 310, diagram_y-(price_limit_cents*scale)); // price limit line
+        
+        // Draw bars
+        for (int i=0;i<24;i++) {
+             if (g_page->value()) {
+                 price = g_price_today->value()[i];
+             } else {
+                 price = g_price_tomorrow->value()[i];
+             }
+             if (current_time_index > -1 && current_time_index == i && g_page->value()) {
+                 it.filled_rectangle(diagram_x + (i*bar_spacing), 150 - ((int) (price*scale)), bar_width, ((int) (price*scale)), white);
+             } else {
+                 it.filled_rectangle(diagram_x + (i*bar_spacing), 150 - ((int) (price*scale)), bar_width, ((int) (price*scale)), price > price_limit_cents ? red:green);
+             }
+        }
+        // Draw x-axis
+        it.line(diagram_x, 151, 320, 151);
+        // and X-axis values
+        it.printf(0,  38, id(roboto), "%d c/kWh", price_limit_cents);
+        it.printf(0, 142, id(roboto), "0 c /kWh");
+
+        // Draw page 1 = The current hour price with the highlight color
+        if (g_page->value()) {
+            it.filled_rectangle(0,71,diagram_x - 12, 51, g_price_now->value() > price_limit_cents ? red:green);
+            it.printf(10,  80, id(roboto), "Nyt");
+            it.printf(7,  100, id(roboto), "%.1f c", g_price_now->value());
+        } else {
+          // Draw page 2 = Tomorrow title
+          it.printf(2,  90, id(roboto2), "Huomenna", black);
+        }
+        // Switch page on every update = update_interval
+        g_page->value() = !g_page->value();
+        if (!g_tomorrow_is_valid->value()) {
+            // Tomorrow price is not yet available, disable page 2 until it's available
+            g_page->value() = true;
+        }
+
+        
+
+
+
+
+
+
+
+
